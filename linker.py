@@ -220,6 +220,12 @@ for stop in bus_stops:
     stop_name = stop.common_name
     stop_name = stop_name.replace(" Stn", " Station")
     stop_name = stop_name.replace(" / ", " ")
+    stop_name = stop_name.replace(" Coll ", " College ")
+    stop_name = stop_name.replace(" Hosp ", " Hospital ")
+    stop_name = stop_name.replace(" Rd", " Road")
+
+    # Merge 2+ spaces
+    stop_name = " ".join(stop_name.split())
 
     match = process.extractOne(stop_name, all_stops, scorer=fuzz.token_sort_ratio)
 
