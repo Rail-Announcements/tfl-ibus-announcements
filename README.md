@@ -2,6 +2,8 @@
 
 This repository has a collection of all TfL iBus announcement files released under the Freedom of Information Act 2000.
 
+The most recently uploaded file(s) on TfL's Sharepoint were on `2024-02-09`.
+
 ## Structure
 
 All files with their original names (`.wav` files have been converted to `.mp3` for file size reasons) are found in the [Original](./Original/) directory.
