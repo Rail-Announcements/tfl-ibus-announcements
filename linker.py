@@ -1,5 +1,4 @@
-import sys
-import requests
+from operator import or_
 import os
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import (
@@ -19,11 +18,13 @@ from sqlalchemy.orm import (
     relationship,
     DeclarativeBase,
 )
+import re
 
-from typing import Any, Dict
 from dotenv import load_dotenv
 
 load_dotenv()
+
+REQUIRED_MATCH_QUALITY = 91
 
 
 # Open DB
@@ -164,7 +165,46 @@ class BusRouteSectionStops(Base):
         return f"BusRouteSectionStops(id={self.id!r}, route_section_id={self.route_section_id!r}, naptan_id={self.naptan_id!r}, sequence={self.sequence!r})"
 
 
+def clean_name(name: str) -> str:
+    name = f" {name} "
+    name = name.replace(" Stn ", " Station ")
+    name = name.replace(" St / ", " Street ")
+    name = name.replace(" / ", " ")
+    name = name.replace(" Coll ", " College ")
+    name = name.replace(" Hosp ", " Hospital ")
+    name = name.replace(" Rd ", " Road ")
+    name = name.replace(" Grn ", " Green ")
+    name = name.replace(" Pk ", " Park ")
+    name = name.replace(" Cmn ", " Common ")
+    name = name.replace(" Ln ", " Lane ")
+    name = name.replace("'", "")
+    name = name.replace(" Underground ", " ")
+    name = name.replace(" DLR ", " ")
+    name = name.replace(" R A F ", " RAF ")
+    name = name.replace(" PH ", " Public House ")
+    name = name.replace(" Rail Station ", " Station ")
+    name = name.replace(" UR Church ", " United Reformed Church ")
+    name = name.replace(" St. ", " St ")
+    name = name.replace(" Y M C A ", " YMCA ")
+
+    name = name.strip()
+
+    if name.endswith(" St"):
+        name = name[:-2] + "Street"
+
+    if name.endswith(" Lan"):
+        name = name[:-3] + "Lane"
+        
+    # Remove text in brackets
+    name = re.sub(r"\(.*?\)", "", name)
+
+    # Merge 2+ spaces
+    name = " ".join(name.split())
+    return name
+
+
 all_stops = []
+all_dests = []
 
 # List filenames in ./Renamed/Stops
 for root, dirs, files in os.walk("./Renamed/Stops"):
@@ -172,43 +212,79 @@ for root, dirs, files in os.walk("./Renamed/Stops"):
         if file.endswith(".mp3"):
             all_stops.append(file[:-4])
 
+# List filenames in ./Renamed/Destinations
+for root, dirs, files in os.walk("./Renamed/Destinations"):
+    for file in files:
+        if file.endswith(".mp3"):
+            all_dests.append(file[:-4])
+
 from thefuzz import fuzz, process
 
 # Get all bus stops
-bus_stops = DBSession.query(BusStop).all()
+bus_stops = DBSession.query(BusStop).where(BusStop.audio_file.is_(None)).all()
 
 # Get all bus route sections
-bus_route_sections = DBSession.query(BusRouteSection).all()
+bus_route_sections = (
+    DBSession.query(BusRouteSection)
+    .where(
+        or_(
+            BusRouteSection.origin_audio_file.is_(None),
+            BusRouteSection.destination_audio_file.is_(None),
+        )
+    )
+    .all()
+)
 
 # Find audio files which are similar to the origin/destination names
 for section in bus_route_sections:
-    origin_name = section.origin_name
-    destination_name = section.destination_name
+    origin_name = clean_name(section.origin_name)
+    destination_name = clean_name(section.destination_name)
 
     origin_match = process.extractOne(
-        origin_name, all_stops, scorer=fuzz.token_sort_ratio
+        origin_name,
+        all_dests,
+        scorer=fuzz.token_sort_ratio,
+        score_cutoff=REQUIRED_MATCH_QUALITY,
     )
-    destination_match = process.extractOne(
-        destination_name, all_stops, scorer=fuzz.token_sort_ratio
-    )
+    if origin_match is None:
+        origin_match = process.extractOne(
+            origin_name,
+            all_stops,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=REQUIRED_MATCH_QUALITY,
+        )
 
-    if origin_match[1] > 90:
+    destination_match = process.extractOne(
+        destination_name,
+        all_stops,
+        scorer=fuzz.token_sort_ratio,
+        score_cutoff=REQUIRED_MATCH_QUALITY,
+    )
+    if destination_match is None:
+        destination_match = process.extractOne(
+            destination_name,
+            all_dests,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=REQUIRED_MATCH_QUALITY,
+        )
+
+    if origin_match is not None:
         # print(f"Matched {origin_name}: {origin_match[0]}")
         section.origin_audio_file = origin_match[0]
         section.origin_audio_file_likeliness = origin_match[1]
     else:
         section.origin_audio_file = None
         section.origin_audio_file_likeliness = None
-        print(f">>> No match for {origin_name}")
+        print(f">>> No match for {origin_name} (sect id={section.id})")
 
-    if destination_match[1] > 90:
+    if destination_match is not None:
         # print(f"Matched {destination_name}: {destination_match[0]}")
         section.destination_audio_file = destination_match[0]
         section.destination_audio_file_likeliness = destination_match[1]
     else:
         section.destination_audio_file = None
         section.destination_audio_file_likeliness = None
-        print(f">>> No match for {destination_name}")
+        print(f">>> No match for {destination_name} (sect id={section.id})")
 
 # Save models
 DBSession.commit()
@@ -217,26 +293,26 @@ print("-----------------")
 
 # Find audio files which are similar to the bus stop names
 for stop in bus_stops:
-    stop_name = stop.common_name
-    stop_name = stop_name.replace(" Stn", " Station")
-    stop_name = stop_name.replace(" / ", " ")
-    stop_name = stop_name.replace(" Coll ", " College ")
-    stop_name = stop_name.replace(" Hosp ", " Hospital ")
-    stop_name = stop_name.replace(" Rd", " Road")
+    stop_name = clean_name(stop.common_name)
 
     # Merge 2+ spaces
     stop_name = " ".join(stop_name.split())
 
-    match = process.extractOne(stop_name, all_stops, scorer=fuzz.token_sort_ratio)
+    match = process.extractOne(
+        stop_name,
+        all_stops,
+        scorer=fuzz.token_sort_ratio,
+        score_cutoff=REQUIRED_MATCH_QUALITY,
+    )
 
-    if match[1] > 90:
+    if match is not None:
         # print(f"Matched {stop_name}: {match[0]}")
         stop.audio_file = match[0]
         stop.audio_file_likeliness = match[1]
     else:
         stop.audio_file = None
         stop.audio_file_likeliness = None
-        print(f">>> No match for {stop_name}")
+        print(f">>> No match for {stop_name} (naptan id={stop.naptan_id})")
 
 
 # Save models

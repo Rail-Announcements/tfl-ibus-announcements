@@ -24,3 +24,30 @@ Various additional files also exist with non-conforming names, some have "v2" co
 Some files (and more soon) have been renamed to allow for easier use by people and automated tools.
 
 Eventually, most NAPTAN codes will be linked to their respective audio files to allow for automated announcement tools to be created. This is done through fuzzy file matching, manual linking, and automted Python scripts.
+
+## Scripts
+
+Automated scripts are found in this repository to help with renaming and linking files.
+
+### Prerequisites
+
+- Modern enough version of Python 3
+- `pip install -r requirements.txt`
+- TfL API key saved to `.env`:
+
+```
+TFL_APP_ID=xyz
+TFL_APP_KEY=xyz
+```
+
+### `get-stops.py`
+
+This uses the [TfL Unified API](https://api.tfl.gov.uk/) with your app ID/key to download information about every bus stop served by TfL, and every TfL-operated bus route, and saves them to a SQLite database named `tfl.db`.
+
+### `linker.py`
+
+This amends the aforementioned SQLite database and uses `thefuzz` to try to find matching audio files for each bus stop as well as every route origin and destination.
+
+If no match can be found, the stop name and its NAPTAN or route section id will be printed to the console for manual matching.
+
+Manual matches can be done using a SQLite editor, such as [DB Browser for SQLite](https://sqlitebrowser.org/).

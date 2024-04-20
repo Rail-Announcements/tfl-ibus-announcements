@@ -164,7 +164,7 @@ class BusRouteSectionStops(Base):
         return f"BusRouteSectionStops(id={self.id!r}, route_section_id={self.route_section_id!r}, naptan_id={self.naptan_id!r}, sequence={self.sequence!r})"
 
 
-# Base.metadata.drop_all(engine)
+Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
 
 
@@ -369,7 +369,7 @@ def import_routes() -> None:
 
 
 def main() -> None:
-    # import_stops()
+    import_stops()
     import_routes()
 
 
