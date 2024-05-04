@@ -131,8 +131,12 @@ class BusRouteSection(Base):
     destination_naptan_id: Mapped[str]
     line_strings: Mapped[str]
 
-    bus_route = relationship("BusRoute", back_populates="route_sections")
-    stops = relationship("BusRouteSectionStops", back_populates="route_section")
+    bus_route: Mapped[BusRoute] = relationship(
+        "BusRoute", back_populates="route_sections"
+    )
+    stops: Mapped["BusRouteSectionStops"] = relationship(
+        "BusRouteSectionStops", back_populates="route_section"
+    )
 
     def __repr__(self):
         return f"BusRouteSection(id={self.id!r}, route_id={self.route_id!r}, name={self.name!r}, direction={self.direction!r}, origin_name={self.origin_name!r}, destination_name={self.destination_name!r}, origin_naptan_id={self.origin_naptan_id!r}, destination_naptan_id={self.destination_naptan_id!r}, line_strings={self.line_strings!r})"
