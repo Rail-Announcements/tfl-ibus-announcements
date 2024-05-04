@@ -164,10 +164,6 @@ class BusRouteSectionStops(Base):
         return f"BusRouteSectionStops(id={self.id!r}, route_section_id={self.route_section_id!r}, naptan_id={self.naptan_id!r}, sequence={self.sequence!r})"
 
 
-Base.metadata.drop_all(engine)
-Base.metadata.create_all(engine)
-
-
 def get_stops_page(pageNumber: int) -> None | Dict[str, Any]:
     url = f"https://api.tfl.gov.uk/StopPoint/Mode/bus"
 
@@ -369,6 +365,9 @@ def import_routes() -> None:
 
 
 def main() -> None:
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+
     import_stops()
     import_routes()
 
