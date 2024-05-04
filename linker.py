@@ -194,7 +194,7 @@ def clean_name(name: str) -> str:
 
     if name.endswith(" Lan"):
         name = name[:-3] + "Lane"
-        
+
     # Remove text in brackets
     name = re.sub(r"\(.*?\)", "", name)
 
@@ -203,117 +203,121 @@ def clean_name(name: str) -> str:
     return name
 
 
-all_stops = []
-all_dests = []
+def main():
+    all_stops = []
+    all_dests = []
 
-# List filenames in ./Renamed/Stops
-for root, dirs, files in os.walk("./Renamed/Stops"):
-    for file in files:
-        if file.endswith(".mp3"):
-            all_stops.append(file[:-4])
+    # List filenames in ./Renamed/Stops
+    for root, dirs, files in os.walk("./Renamed/Stops"):
+        for file in files:
+            if file.endswith(".mp3"):
+                all_stops.append(file[:-4])
 
-# List filenames in ./Renamed/Destinations
-for root, dirs, files in os.walk("./Renamed/Destinations"):
-    for file in files:
-        if file.endswith(".mp3"):
-            all_dests.append(file[:-4])
+    # List filenames in ./Renamed/Destinations
+    for root, dirs, files in os.walk("./Renamed/Destinations"):
+        for file in files:
+            if file.endswith(".mp3"):
+                all_dests.append(file[:-4])
 
-from thefuzz import fuzz, process
+    from thefuzz import fuzz, process
 
-# Get all bus stops
-bus_stops = DBSession.query(BusStop).where(BusStop.audio_file.is_(None)).all()
+    # Get all bus stops
+    bus_stops = DBSession.query(BusStop).where(BusStop.audio_file.is_(None)).all()
 
-# Get all bus route sections
-bus_route_sections = (
-    DBSession.query(BusRouteSection)
-    .where(
-        or_(
-            BusRouteSection.origin_audio_file.is_(None),
-            BusRouteSection.destination_audio_file.is_(None),
+    # Get all bus route sections
+    bus_route_sections = (
+        DBSession.query(BusRouteSection)
+        .where(
+            or_(
+                BusRouteSection.origin_audio_file.is_(None),
+                BusRouteSection.destination_audio_file.is_(None),
+            )
         )
+        .all()
     )
-    .all()
-)
 
-# Find audio files which are similar to the origin/destination names
-for section in bus_route_sections:
-    origin_name = clean_name(section.origin_name)
-    destination_name = clean_name(section.destination_name)
+    # Find audio files which are similar to the origin/destination names
+    for section in bus_route_sections:
+        origin_name = clean_name(section.origin_name)
+        destination_name = clean_name(section.destination_name)
 
-    origin_match = process.extractOne(
-        origin_name,
-        all_dests,
-        scorer=fuzz.token_sort_ratio,
-        score_cutoff=REQUIRED_MATCH_QUALITY,
-    )
-    if origin_match is None:
         origin_match = process.extractOne(
             origin_name,
+            all_dests,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=REQUIRED_MATCH_QUALITY,
+        )
+        if origin_match is None:
+            origin_match = process.extractOne(
+                origin_name,
+                all_stops,
+                scorer=fuzz.token_sort_ratio,
+                score_cutoff=REQUIRED_MATCH_QUALITY,
+            )
+
+        destination_match = process.extractOne(
+            destination_name,
+            all_stops,
+            scorer=fuzz.token_sort_ratio,
+            score_cutoff=REQUIRED_MATCH_QUALITY,
+        )
+        if destination_match is None:
+            destination_match = process.extractOne(
+                destination_name,
+                all_dests,
+                scorer=fuzz.token_sort_ratio,
+                score_cutoff=REQUIRED_MATCH_QUALITY,
+            )
+
+        if origin_match is not None:
+            # print(f"Matched {origin_name}: {origin_match[0]}")
+            section.origin_audio_file = origin_match[0]
+            section.origin_audio_file_likeliness = origin_match[1]
+        else:
+            section.origin_audio_file = None
+            section.origin_audio_file_likeliness = None
+            print(f">>> No match for {origin_name} (sect id={section.id})")
+
+        if destination_match is not None:
+            # print(f"Matched {destination_name}: {destination_match[0]}")
+            section.destination_audio_file = destination_match[0]
+            section.destination_audio_file_likeliness = destination_match[1]
+        else:
+            section.destination_audio_file = None
+            section.destination_audio_file_likeliness = None
+            print(f">>> No match for {destination_name} (sect id={section.id})")
+
+    # Save models
+    DBSession.commit()
+
+    print("-----------------")
+
+    # Find audio files which are similar to the bus stop names
+    for stop in bus_stops:
+        stop_name = clean_name(stop.common_name)
+
+        # Merge 2+ spaces
+        stop_name = " ".join(stop_name.split())
+
+        match = process.extractOne(
+            stop_name,
             all_stops,
             scorer=fuzz.token_sort_ratio,
             score_cutoff=REQUIRED_MATCH_QUALITY,
         )
 
-    destination_match = process.extractOne(
-        destination_name,
-        all_stops,
-        scorer=fuzz.token_sort_ratio,
-        score_cutoff=REQUIRED_MATCH_QUALITY,
-    )
-    if destination_match is None:
-        destination_match = process.extractOne(
-            destination_name,
-            all_dests,
-            scorer=fuzz.token_sort_ratio,
-            score_cutoff=REQUIRED_MATCH_QUALITY,
-        )
+        if match is not None:
+            # print(f"Matched {stop_name}: {match[0]}")
+            stop.audio_file = match[0]
+            stop.audio_file_likeliness = match[1]
+        else:
+            stop.audio_file = None
+            stop.audio_file_likeliness = None
+            print(f">>> No match for {stop_name} (naptan id={stop.naptan_id})")
 
-    if origin_match is not None:
-        # print(f"Matched {origin_name}: {origin_match[0]}")
-        section.origin_audio_file = origin_match[0]
-        section.origin_audio_file_likeliness = origin_match[1]
-    else:
-        section.origin_audio_file = None
-        section.origin_audio_file_likeliness = None
-        print(f">>> No match for {origin_name} (sect id={section.id})")
-
-    if destination_match is not None:
-        # print(f"Matched {destination_name}: {destination_match[0]}")
-        section.destination_audio_file = destination_match[0]
-        section.destination_audio_file_likeliness = destination_match[1]
-    else:
-        section.destination_audio_file = None
-        section.destination_audio_file_likeliness = None
-        print(f">>> No match for {destination_name} (sect id={section.id})")
-
-# Save models
-DBSession.commit()
-
-print("-----------------")
-
-# Find audio files which are similar to the bus stop names
-for stop in bus_stops:
-    stop_name = clean_name(stop.common_name)
-
-    # Merge 2+ spaces
-    stop_name = " ".join(stop_name.split())
-
-    match = process.extractOne(
-        stop_name,
-        all_stops,
-        scorer=fuzz.token_sort_ratio,
-        score_cutoff=REQUIRED_MATCH_QUALITY,
-    )
-
-    if match is not None:
-        # print(f"Matched {stop_name}: {match[0]}")
-        stop.audio_file = match[0]
-        stop.audio_file_likeliness = match[1]
-    else:
-        stop.audio_file = None
-        stop.audio_file_likeliness = None
-        print(f">>> No match for {stop_name} (naptan id={stop.naptan_id})")
+    # Save models
+    DBSession.commit()
 
 
-# Save models
-DBSession.commit()
+if __name__ == "__main__":
+    main()
